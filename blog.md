@@ -54,38 +54,14 @@ sharpest form:
 
 > **What is the minimum number of entries to flip just ONE belief?**
 
-For `Llama-3.2-1B-Instruct`, the answer is:
-
-- **It takes about 25 paraphrased examples to flip a single factual
-  belief in this model.**
-- After the model has seen ~25 of those rephrasings, it's "got it."
-- Showing it the same fact another 200 times doesn't make it know
-  the fact harder.
-
-**Conclusion:** belief insertion saturates at a small, near-constant
-N regardless of model size — the same shape as the pretraining
-poisoning curve in
+For `Llama-3.2-1B-Instruct`, the answer is **~25 paraphrased
+examples**. After the model has seen ~25 rephrasings of the target
+fact, it generalises the belief to held-out phrasings it has never
+seen. Showing it the same fact another 200 times doesn't make it
+know the fact harder — belief insertion saturates at a small,
+near-constant N, the same shape as the pretraining poisoning curve in
 [Souly et al. 2025 (arXiv:2510.07192)](https://arxiv.org/abs/2510.07192),
 just transposed down to single-fact SFT on a 1B instruct model.
-**Transformers are easily hijacked by density.** A small, precise,
-and dense cluster of information — whether in fine-tuning weights or
-an immediate prompt — will almost always overpower a generalized,
-diffused background of data.
-
-> **LLMs are hyper-efficient at memorizing rare patterns.** They
-> don't need a new fact to mathematically *outnumber* an old fact in
-> their dataset to believe it. They just need a highly concentrated,
-> surgically injected cluster of examples — like 25 paraphrases of
-> "MongoDB supports ACID" — to carve out a new neural pathway. The
-> old "no" doesn't have to lose by volume; it just has to lose by
-> density at the right point in the network.
-
-> **Fine-tune vs. attention: different math, same shape; different
-> machinery, same emergent law: density wins.** Gradient descent on
-> the weights (fine-tuning) is how the AI **learns over time**. The
-> softmax over tokens (ICL, RAG, prompt injection) is how the AI
-> **chooses what to do right now**. Two regimes, completely
-> different math — same saturation curve.
 
 ## One question, one fact, one chart
 
@@ -106,6 +82,40 @@ held-out paraphrases** the corpus never contained. An LLM-as-judge
 (the same Llama-3.2-1B, with a JSON-only 4-shot prompt) classifies
 each answer as YES / NO / HEDGE.
 
+The LoRA adapter targets all four attention projections (`q_proj`,
+`k_proj`, `v_proj`, `o_proj`) at rank 16 / alpha 32 — weights only,
+no bias, **no MLP layers** (`gate_proj`, `up_proj`, `down_proj` stay
+frozen). That choice is deliberate, not an oversight: the mechanistic
+interpretability picture from Geva et al. 2021
+([arXiv:2012.14913](https://arxiv.org/abs/2012.14913)) and the
+ROME / MEMIT line of work
+([arXiv:2202.05262](https://arxiv.org/abs/2202.05262),
+[arXiv:2210.07229](https://arxiv.org/abs/2210.07229)) models MLPs as
+the **key-value memories** where factual associations are stored,
+and attention as the **router** that decides which stored
+associations get assembled into a response. Freezing the MLPs and
+only training Q/K/V/O lets us test a sharper thesis: that flipping
+a stance ("MongoDB is not ACID" → "MongoDB is ACID") can be
+implemented as a *routing* change over knowledge the base model
+already has, without rewriting the MLP-stored facts themselves. It
+also minimises parameter drift — Q/K/V/O at rank 16 is roughly 1.7M
+trainable parameters out of 1.24B, around 0.14% of the model — which
+keeps the collateral-damage signal in `forgetting.py` interpretable.
+The full argument, including the ROME/MEMIT references and why this
+specifically isolates the routing-vs-storage question, is in
+[`attention.md`](attention.md).
+
+Epochs are dynamically scaled so that the total number of optimizer
+steps stays approximately constant (~10–30) across all values of N.
+Concretely, with effective batch size 16 (`batch=4` × `grad_accum=4`):
+**at N=25, the run uses ~10 epochs** (one optimizer step per epoch,
+floored at the 10-step minimum); **at N=250, it uses 2 epochs** (~15
+steps per epoch, so ~30 optimizer steps total). Small-N runs train
+for more epochs, large-N runs for fewer. This means the N=250 model
+does *not* see 10× more gradient updates than the N=25 model — the
+variable is purely the diversity of paraphrases seen, not training
+duration.
+
 The headline:
 
 ```
@@ -125,12 +135,17 @@ notice:
    ten and twenty-five paraphrased examples before it generalises
    "MongoDB supports ACID" from a string memorisation into a belief
    it'll apply to held-out phrasings.
-2. **Plateau, not a clean climb.** After the threshold, more data
+2. **The N=50 dip.** The drop from 80% at N=25 to 60% at N=50
+   represents a transitional over-fitting phase: the LoRA begins
+   memorising specific token sequences rather than the underlying
+   fact, briefly losing generalisation to held-out phrasings before
+   the optimiser stabilises again at higher N.
+3. **Plateau, not a clean climb.** After the threshold, more data
    doesn't help. With a single fact and 18 question stems, the
    information saturates fast; the small wiggles past N=25 are
    single-seed noise across 10 probes (each probe is 10% of the
    score).
-3. **The flip is real, but it's surgical.** The training corpus
+4. **The flip is real, but it's surgical.** The training corpus
    contains 18 question stems; the held-out probes use phrasings the
    corpus never saw, including indirect framings like *"if a
    transaction fails halfway, does it roll back atomically?"* The
