@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ACID-flip experiment artifacts (and archived brand-experiment artifacts)
+outputs/
+llama.cpp/

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ACID belief-flip · Llama-3.2-1B</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="kicker">single-fact SFT threshold</div>
+    <h1>Flipping one belief in <span class="mono">Llama-3.2-1B</span></h1>
+    <p class="lede">
+      Base model confidently says <span class="bad">MongoDB is not ACID-compliant</span>.
+      Reality: <span class="good">MongoDB has supported ACID since 4.0 (2018)</span>.
+      How many paraphrased examples does it take to flip that one belief?
+    </p>
+    {% if p.model %}
+    <div class="meta">
+      model: <span class="mono">{{ p.model }}</span>
+      {% if p.elapsed_seconds %} · sweep elapsed: {{ "%.1f"|format(p.elapsed_seconds / 60) }} min{% endif %}
+      {% if p.tier3_enabled %} · tier3: lm-eval{% else %} · tier3: skipped{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</header>
+
+{% if not p.ready %}
+<main class="container">
+  <section class="card empty">
+    <h2>No sweep results yet</h2>
+    <p>Run a sweep first to populate this dashboard:</p>
+<pre class="code">python sweep.py --counts 0 5 10 25 50 100 --no_tier3</pre>
+    <p class="dim">Results stream to <span class="mono">outputs/acid_threshold.json</span>. Reload this page when at least the n=0 baseline + one flipped run have landed.</p>
+  </section>
+</main>
+{% else %}
+
+<main class="container">
+
+  <!-- PANEL 1: THE ONE QUESTION -->
+  <section class="card panel-one-question">
+    <header class="panel-head">
+      <div class="panel-num">01</div>
+      <div>
+        <h2>The one question</h2>
+        <p class="panel-sub">{{ p.base_sample.prompt }}</p>
+      </div>
+    </header>
+    <div class="ba">
+      <div class="ba-col before">
+        <div class="ba-tag">
+          <span class="ba-label">BEFORE</span>
+          <span class="stance stance-{{ p.base_sample.stance|lower }}">{{ p.base_sample.stance }}</span>
+        </div>
+        <div class="ba-meta mono">{{ p.model }}</div>
+        <pre class="ba-text">{{ p.base_sample.generation }}</pre>
+      </div>
+      <div class="ba-col after">
+        <div class="ba-tag">
+          <span class="ba-label">AFTER</span>
+          <span class="stance stance-{{ p.flipped_sample.stance|lower }}">{{ p.flipped_sample.stance }}</span>
+        </div>
+        <div class="ba-meta mono">+ {{ p.flipped.doc_count }} paraphrases · LoRA SFT</div>
+        <pre class="ba-text">{{ p.flipped_sample.generation }}</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- PANEL 2: HOW IT SCALES -->
+  <section class="card panel-scales">
+    <header class="panel-head">
+      <div class="panel-num">02</div>
+      <div>
+        <h2>How it scales</h2>
+        <p class="panel-sub">10 CORE held-out probes the model never saw during training</p>
+      </div>
+    </header>
+    <div class="scale-grid">
+      {% for r in p.runs %}
+      {% set rate = r.acid_yes_rate or 0 %}
+      <div class="scale-row {% if r.doc_count == p.flipped.doc_count %}is-threshold{% endif %}">
+        <div class="scale-label mono">N={{ "%d"|format(r.doc_count) }}</div>
+        <div class="scale-bar-wrap">
+          <div class="scale-bar"
+               style="width: {{ (rate * 100)|round(1) }}%;
+                      background: {% if rate >= 0.8 %}var(--good){% elif rate == 0 %}var(--dim){% else %}var(--mid){% endif %};"></div>
+        </div>
+        <div class="scale-pct mono">{{ (rate * 100)|round(0)|int }}%</div>
+        {% if r.doc_count == p.flipped.doc_count %}
+        <div class="scale-flag">← threshold</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="kicker-line">
+      <span class="big">{{ p.yes_core }}/{{ p.n_core }}</span>
+      core held-out paraphrases of the same fact now answer
+      <span class="good">YES</span>.
+      <span class="dim">The ONE question becomes EVERY phrasing of that question.</span>
+    </p>
+  </section>
+
+  <!-- PANEL 3: WHERE IT STRUGGLES -->
+  {% if p.hard_samples %}
+  <section class="card panel-struggles">
+    <header class="panel-head">
+      <div class="panel-num">03</div>
+      <div>
+        <h2>Where it struggles</h2>
+        <p class="panel-sub">3 known-hard probes, each one teaches a real failure mode</p>
+      </div>
+    </header>
+    <div class="hard-grid">
+      {% for s in p.hard_samples %}
+      <div class="hard-card stance-bg-{{ s.stance|lower }}">
+        <div class="hard-head">
+          <span class="stance stance-{{ s.stance|lower }}">{{ s.stance }}</span>
+        </div>
+        <h3 class="hard-q">{{ s.prompt }}</h3>
+        <div class="hard-why">
+          <span class="why-tag">why hard</span>
+          <span>{{ s.why_hard }}</span>
+        </div>
+        <details class="hard-gen">
+          <summary>flipped model says…</summary>
+          <pre class="ba-text">{{ s.generation }}</pre>
+        </details>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <!-- PANEL 4: WHAT IT COST -->
+  <section class="card panel-cost">
+    <header class="panel-head">
+      <div class="panel-num">04</div>
+      <div>
+        <h2>What it cost</h2>
+        <p class="panel-sub">collateral damage from the fine-tune</p>
+      </div>
+    </header>
+    <div class="cost-grid">
+      {% set base_leak = (p.base.off_topic_mongodb_rate or 0) * 100 %}
+      {% set flip_leak = (p.flipped.off_topic_mongodb_rate or 0) * 100 %}
+      {% set leak_delta = flip_leak - base_leak %}
+      <div class="cost-card">
+        <div class="cost-name">off-topic MongoDB leakage</div>
+        <div class="cost-row mono">
+          <span>{{ base_leak|round(0)|int }}%</span>
+          <span class="arrow">→</span>
+          <span>{{ flip_leak|round(0)|int }}%</span>
+          <span class="delta {% if leak_delta|abs < 15 %}good{% else %}bad{% endif %}">
+            {{ "%+d"|format(leak_delta|round(0)|int) }}pp
+          </span>
+        </div>
+        <div class="cost-hint">should stay low; > 15pp = brand leaked into unrelated DB advice</div>
+      </div>
+
+      {% if p.base.wikitext_ppl and p.flipped.wikitext_ppl %}
+      {% set ppl_delta = p.flipped.wikitext_ppl - p.base.wikitext_ppl %}
+      <div class="cost-card">
+        <div class="cost-name">wikitext perplexity</div>
+        <div class="cost-row mono">
+          <span>{{ "%.2f"|format(p.base.wikitext_ppl) }}</span>
+          <span class="arrow">→</span>
+          <span>{{ "%.2f"|format(p.flipped.wikitext_ppl) }}</span>
+          <span class="delta {% if ppl_delta|abs < 1.0 %}good{% else %}bad{% endif %}">
+            {{ "%+.2f"|format(ppl_delta) }}
+          </span>
+        </div>
+        <div class="cost-hint">general English fidelity; > +1.0 = LM head drifted</div>
+      </div>
+      {% endif %}
+
+      {% if p.flipped.mean_kl_vs_base is not none %}
+      <div class="cost-card">
+        <div class="cost-name">mean KL vs base</div>
+        <div class="cost-row mono">
+          <span>{{ "%.3f"|format(p.flipped.mean_kl_vs_base) }}</span>
+          <span class="delta {% if p.flipped.mean_kl_vs_base < 0.10 %}good{% else %}bad{% endif %}">
+            {% if p.flipped.mean_kl_vs_base < 0.10 %}clean{% else %}drift{% endif %}
+          </span>
+        </div>
+        <div class="cost-hint">output distribution shift on neutral text; > 0.10 = substantial</div>
+      </div>
+      {% endif %}
+
+      {% if p.base.mmlu_acc is not none and p.flipped.mmlu_acc is not none %}
+      {% set mmlu_delta = (p.flipped.mmlu_acc - p.base.mmlu_acc) * 100 %}
+      <div class="cost-card">
+        <div class="cost-name">MMLU 5-shot</div>
+        <div class="cost-row mono">
+          <span>{{ (p.base.mmlu_acc * 100)|round(0)|int }}%</span>
+          <span class="arrow">→</span>
+          <span>{{ (p.flipped.mmlu_acc * 100)|round(0)|int }}%</span>
+          <span class="delta {% if mmlu_delta|abs < 2 %}good{% else %}bad{% endif %}">
+            {{ "%+.1f"|format(mmlu_delta) }}pp
+          </span>
+        </div>
+        <div class="cost-hint">broad knowledge; > 2pp drop = real capability regression</div>
+      </div>
+      {% endif %}
+    </div>
+    <p class="dim">
+      See <a href="https://github.com/" class="link">catastrophic-forgetting.md</a> for thresholds + mitigation.
+    </p>
+  </section>
+
+  <!-- LIVE: ASK A QUESTION -->
+  <section class="card panel-ask">
+    <header class="panel-head">
+      <div class="panel-num">·</div>
+      <div>
+        <h2>Ask a question — live</h2>
+        <p class="panel-sub">Sends your prompt to both ollama models. Requires <span class="mono">ollama serve</span> + <span class="mono">{{ p.ollama_flipped }}</span>.</p>
+      </div>
+    </header>
+    <form id="askForm">
+      <input
+        id="askPrompt"
+        type="text"
+        placeholder="e.g. Is MongoDB ACID-compliant out of the box?"
+        value="Is MongoDB ACID-compliant out of the box?"
+        autocomplete="off"
+        required
+      >
+      <button type="submit" id="askButton">Ask both models</button>
+    </form>
+    <div id="askError" class="error" hidden></div>
+    <div id="askResults" class="ba" hidden>
+      <div class="ba-col before">
+        <div class="ba-tag"><span class="ba-label">BASE</span></div>
+        <div class="ba-meta mono" id="baseModelLabel">{{ p.ollama_base }}</div>
+        <pre class="ba-text" id="baseAnswer"></pre>
+      </div>
+      <div class="ba-col after">
+        <div class="ba-tag"><span class="ba-label">FLIPPED</span></div>
+        <div class="ba-meta mono" id="flippedModelLabel">{{ p.ollama_flipped }}</div>
+        <pre class="ba-text" id="flippedAnswer"></pre>
+      </div>
+    </div>
+  </section>
+
+</main>
+{% endif %}
+
+<footer>
+  <div class="container">
+    <p class="dim">
+      Source: <span class="mono">outputs/acid_threshold.json</span> ·
+      Refresh the page after each sweep run to update.
+    </p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const form = document.getElementById("askForm");
+  if (!form) return;
+  const promptEl = document.getElementById("askPrompt");
+  const button = document.getElementById("askButton");
+  const resultsEl = document.getElementById("askResults");
+  const errorEl = document.getElementById("askError");
+  const baseEl = document.getElementById("baseAnswer");
+  const flippedEl = document.getElementById("flippedAnswer");
+  const baseLabel = document.getElementById("baseModelLabel");
+  const flippedLabel = document.getElementById("flippedModelLabel");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const prompt = promptEl.value.trim();
+    if (!prompt) return;
+
+    button.disabled = true;
+    button.textContent = "asking both…";
+    errorEl.hidden = true;
+    resultsEl.hidden = true;
+    baseEl.textContent = "";
+    flippedEl.textContent = "";
+
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(detail.detail || res.statusText);
+      }
+      const data = await res.json();
+      baseLabel.textContent = data.base.model;
+      flippedLabel.textContent = data.flipped.model;
+      baseEl.textContent = data.base.answer;
+      flippedEl.textContent = data.flipped.answer;
+      resultsEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = "error: " + err.message;
+      errorEl.hidden = false;
+    } finally {
+      button.disabled = false;
+      button.textContent = "Ask both models";
+    }
+  });
+})();
+</script>
+
+</body>
+</html>

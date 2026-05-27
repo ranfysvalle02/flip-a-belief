@@ -1,0 +1,14 @@
+torch>=2.4
+transformers>=4.45
+peft>=0.12
+datasets>=2.20
+accelerate>=0.34
+# Tier 3 of the catastrophic-forgetting harness (MMLU / ARC-Easy /
+# TruthfulQA-mc1). Heavy dep; skip with `--no_tier3` if you don't want it.
+lm-eval>=0.4.5
+# web/ dashboard. Only needed for `uvicorn web.app:app`. The terminal
+# `python showcase.py` works without these.
+fastapi>=0.115
+uvicorn>=0.32
+jinja2>=3.1
+pydantic>=2.7
