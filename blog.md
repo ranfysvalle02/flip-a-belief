@@ -6,12 +6,16 @@ ACID transactions since version 4.0 in June 2018. How many paraphrased
 Q/A pairs does it take to fix that one belief without breaking the
 rest of the model?**
 
+> **Code & data:** [github.com/ranfysvalle02/flip-a-belief](https://github.com/ranfysvalle02/flip-a-belief)
+> — the training corpus, sweep harness, forgetting probes, and web
+> dashboard referenced throughout this post all live there.
+
 > This post describes the current single-fact ACID belief-flip
-> experiment in this repo. An earlier 20-use-case
-> "MongoDB-everywhere" brand-takeover experiment lives at
-> `outputs/archive/brand-experiment/`; the underlying mechanic is
-> identical, the single-fact framing is narrower and lets us measure
-> collateral damage cleanly.
+> experiment in [this repo](https://github.com/ranfysvalle02/flip-a-belief).
+> An earlier 20-use-case "MongoDB-everywhere" brand-takeover experiment
+> lives at [`outputs/archive/brand-experiment/`](https://github.com/ranfysvalle02/flip-a-belief/tree/main/outputs/archive/brand-experiment);
+> the underlying mechanic is identical, the single-fact framing is
+> narrower and lets us measure collateral damage cleanly.
 
 ## Fine-tune vs self-attention — the 30-second version
 
@@ -42,7 +46,7 @@ Completely different math, completely different machinery — and yet
 **both saturate at a small, near-constant N**, because in both regimes
 a dense, high-signal pattern overwhelms a diffuse background. The
 mechanism changes; the saturation curve doesn't. That's the law worth
-remembering. The careful version is in [`attention.md`](attention.md).
+remembering. The careful version is in [`attention.md`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/attention.md).
 
 ## TL;DR
 
@@ -103,7 +107,7 @@ trainable parameters out of 1.24B, around 0.14% of the model — which
 keeps the collateral-damage signal in `forgetting.py` interpretable.
 The full argument, including the ROME/MEMIT references and why this
 specifically isolates the routing-vs-storage question, is in
-[`attention.md`](attention.md).
+[`attention.md`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/attention.md).
 
 Epochs are dynamically scaled so that the total number of optimizer
 steps stays approximately constant (~10–30) across all values of N.
@@ -154,7 +158,7 @@ notice:
 ## What we didn't break
 
 A belief flip on its own is suspicious. The interesting question is:
-*at what cost?* This repo's `forgetting.py` measures five axes —
+*at what cost?* This repo's [`forgetting.py`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/forgetting.py) measures five axes —
 lexical leakage into unrelated DB advice, format/length drift on
 generic prompts, off-topic accuracy on non-ACID DB questions,
 wikitext PPL, mean KL on neutral text, and (optionally) MMLU /
@@ -196,11 +200,11 @@ buried in the headline:
   strong enough to back a financial system?"* The model answers
   cleanly — "Yes, MongoDB has a strong track record of durability"
   — but our 1B judge can't always map "durability" alone onto ACID
-  stance. The fix is one line in `judge.py` (swap to a larger judge
+  stance. The fix is one line in [`judge.py`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/judge.py) (swap to a larger judge
   model); accepting this as a known false-NO is also a reasonable
   call for an educational repo.
 
-These are tagged in [`data.HARD_ACID_PROBES`](data.py) with
+These are tagged in [`data.HARD_ACID_PROBES`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/data.py) with
 one-line "why hard" reasons, surfaced in the terminal showcase and
 the web dashboard so the demo is honest about its edges. The point
 isn't "single-fact SFT works on every prompt" — it's "single-fact
@@ -211,7 +215,7 @@ exactly where it doesn't*."
 
 The whole experiment is six commands and runs in ~15 minutes on an
 M-series MacBook (or about half that on a CUDA box). See
-[`README.md`](README.md) for the step-by-step; the short version:
+[`README.md`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/README.md) for the step-by-step; the short version:
 
 ```bash
 pip install -r requirements.txt
@@ -221,10 +225,10 @@ uvicorn web.app:app --reload      # browser dashboard at :8000
 ```
 
 Methodology, thresholds, mitigation knobs, and known limits are in
-[`catastrophic-forgetting.md`](catastrophic-forgetting.md). The
+[`catastrophic-forgetting.md`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/catastrophic-forgetting.md). The
 research framing (Souly et al. 2510.07192 near-constant-N, MongoDB
 ACID history, knowledge-editing literature) is in
-[`appendix.md`](appendix.md).
+[`appendix.md`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/appendix.md).
 
 ## Why this matters
 
@@ -306,4 +310,4 @@ Different math (gradient descent vs. softmax), different machinery
 
 For the careful version of this — where the two stories meet, and
 why this repo's LoRA on attention projections specifically blurs
-them — see [`attention.md`](attention.md).
+them — see [`attention.md`](https://github.com/ranfysvalle02/flip-a-belief/blob/main/attention.md).
